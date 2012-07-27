@@ -27,20 +27,76 @@ import os
 import sys
 import re
 
-VERSION = '1.0'
+VERSION = '0.1'
 
 # defaults
-DEFAULT_nameFormat = '/N/_new./E/'
+DEFAULT_varMarker = '$'
+DEFAULT_varPrefix = 'FP_'
+DEFAULT_varBaseName = 'BASENAME'
+DEFAULT_varExtension = 'EXTENSION'
+DEFAULT_varInFile = 'IN'
+DEFAULT_varOutFile = 'OUT'
+
+DEFAULT_nameFormat = DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '}_new' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '}'
 DEFAULT_verbose = 1
+
+# globals
+
+# this must be in accordance with the defaults
+VAR_REG_EX_FOR_NAME_FORMAT = '\$\{FP_[\w\d]*\}'
+VAR_REG_EX_FOR_NAME_FORMAT_COMPILED = re.compile( VAR_REG_EX_FOR_NAME_FORMAT )
 
 # errors
 ERROR_INPUT_PATH_DOES_NOT_EXIST = -1
 ERROR_INVALID_REGEX = -2
+ERROR_INVALID_FORMAT_NAME_LABEL = -3
+
+def generateOutputFilename( baseName, extension, nameFormat ):
+
+    # detect all the matches to the format variables    
+    matchIterator = VAR_REG_EX_FOR_NAME_FORMAT_COMPILED.finditer( nameFormat )
+
+    # and replace them with the corresponding value
+    outputFilename = ''
+    begin = 0
+    oneMatchFound = False
+    for m in matchIterator:
+
+        oneMatchFound = True
+
+        outputFilename += nameFormat[begin:m.start()]
+        begin = m.end()
+
+        # get the match
+        label = nameFormat[m.start() + len( DEFAULT_varPrefix ) + 2:m.end() - 1]
+
+        if label == DEFAULT_varBaseName:
+            outputFilename += baseName
+        elif label == DEFAULT_varExtension:
+            outputFilename += extension
+        else:
+            print 'The label', label, 'for the format of the output name is invalid'
+            sys.exit( ERROR_INVALID_FORMAT_NAME_LABEL )
+
+    if oneMatchFound:
+        outputFilename += nameFormat[m.end():]
+    else:
+        outputFilename = baseName + extension
+
+    return outputFilename
 
 def processFile( filename, args ):
 
+    # decompose the input filename
+    dirName, name = os.path.split( filename )
+    baseName, ext = os.path.splitext( name )
+
+    # generate the output filename
+    outputFilename = generateOutputFilename( baseName, ext, args.nameFormat )
+    outputFilename = os.path.join( args.outputPath, outputFilename )
+
     if args.verbosity > 1:
-        print 'Processing', filename
+        print 'Processing', filename, ' -> ', outputFilename
 
 def run( args ):
 
@@ -57,7 +113,7 @@ def run( args ):
         pattern = re.compile( args.fileFilter )
     except:
         print 'The regular expression', args.fileFilter, 'is invalid'
-        print 'Sorry dude. You could be hitting on of these two bugs: http://bugs.python.org/issue2537 or http://bugs.python.org/issue214033'
+        print 'Sorry dude. You could be hitting on of these two bugs: http: // bugs.python.org / issue2537 or http: // bugs.python.org / issue214033'
         sys.exit( ERROR_INVALID_REGEX )
 
     # check if we do not need to recurse or not
@@ -80,7 +136,8 @@ def run( args ):
 
 if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser( description = 'Process a set of files applying a given function to each of them' )
+    parser = argparse.ArgumentParser( description = 'Process a set of files applying a given function to each of them.',
+                                      epilog = 'Note that string containing variables should be included in SINGLE QUOTES in order to avoid bash expansion.' )
 
     parser.add_argument( '-i', '--inputPath',
                          type = str,
@@ -91,7 +148,7 @@ if __name__ == "__main__":
     parser.add_argument( '-o', '--outputPath',
                          type = str,
                          action = 'store',
-                         help = 'the output folder (default is the same as the input)',
+                         help = 'the output folder ( default is the same as the input )',
                          default = None,
                          required = False )
 
@@ -104,8 +161,15 @@ if __name__ == "__main__":
     parser.add_argument( '-n', '--nameFormat',
                          type = str,
                          action = 'store',
-                         help = 'name format: /N/ indicates the original name, /E/ the original extensions (default is ' + DEFAULT_nameFormat + ')',
-                         default = None )
+                         help = 'name format: ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '} indicates the original file basename, ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} the original extensions ( default is ' + DEFAULT_nameFormat + ' )',
+                         default = DEFAULT_nameFormat )
+
+    parser.add_argument( '-c', '--command',
+                         type = str,
+                         action = 'store',
+                         help = 'the command to apply to the list of files. Note that ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFile + '} denotes the input file, whereas ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varOutFile + '} denotes the output file.',
+                         default = None,
+                         required = True )
 
     parser.add_argument( '-r', '--recursive',
                          action = 'store_true',
@@ -120,11 +184,11 @@ if __name__ == "__main__":
                          choices = [0, 1, 2],
                          action = 'store',
                          default = DEFAULT_verbose,
-                         help = 'increase output verbosity. 0 is no output, 1 is output from the function applied to the files, 2 is output from %(prog)s (default is ' + str( DEFAULT_verbose ) + ')' )
+                         help = 'increase output verbosity. 0 is no output, 1 is output from the function applied to the files, 2 is output from %(prog)s ( default is ' + str( DEFAULT_verbose ) + ' )' )
 
     parser.add_argument( '--version',
                          action = 'version',
-                         version = '%(prog)s ' + str( VERSION ) )
+                         version = ' % ( prog )s ' + str( VERSION ) )
 
     args = parser.parse_args()
 
@@ -133,10 +197,5 @@ if __name__ == "__main__":
         if args.verbosity > 0:
             print 'Defaulting output path to', args.outputPath
 
-    if args.nameFormat == None:
-        args.nameFormat = DEFAULT_nameFormat
-        if args.verbosity > 0:
-            print 'Defaulting output name format to', args.nameFormat
-
-    # let
+    # let'd go !
     run( args )
