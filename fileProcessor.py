@@ -37,7 +37,8 @@ DEFAULT_varExtension = 'EXTENSION'
 DEFAULT_varInFile = 'IN'
 DEFAULT_varOutFile = 'OUT'
 
-DEFAULT_nameFormat = DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '}_new' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '}'
+#DEFAULT_nameFormat = DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '}_new' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '}'
+DEFAULT_nameFormat = ''
 DEFAULT_verbose = 1
 
 # globals
@@ -49,39 +50,44 @@ VAR_REG_EX_FOR_NAME_FORMAT_COMPILED = re.compile( VAR_REG_EX_FOR_NAME_FORMAT )
 # errors
 ERROR_INPUT_PATH_DOES_NOT_EXIST = -1
 ERROR_INVALID_REGEX = -2
-ERROR_INVALID_FORMAT_NAME_LABEL = -3
+ERROR_INVALID_NAME_FORMAT_LABEL = -3
+ERROR_INVALID_NAME_FORMAT = -4
 
 def generateOutputFilename( baseName, extension, nameFormat ):
 
-    # detect all the matches to the format variables    
-    matchIterator = VAR_REG_EX_FOR_NAME_FORMAT_COMPILED.finditer( nameFormat )
-
-    # and replace them with the corresponding value
-    outputFilename = ''
-    begin = 0
-    oneMatchFound = False
-    for m in matchIterator:
-
-        oneMatchFound = True
-
-        outputFilename += nameFormat[begin:m.start()]
-        begin = m.end()
-
-        # get the match
-        label = nameFormat[m.start() + len( DEFAULT_varPrefix ) + 2:m.end() - 1]
-
-        if label == DEFAULT_varBaseName:
-            outputFilename += baseName
-        elif label == DEFAULT_varExtension:
-            outputFilename += extension
-        else:
-            print 'The label', label, 'for the format of the output name is invalid'
-            sys.exit( ERROR_INVALID_FORMAT_NAME_LABEL )
-
-    if oneMatchFound:
-        outputFilename += nameFormat[m.end():]
-    else:
+    if nameFormat == '':
         outputFilename = baseName + extension
+    else:
+
+        # detect all the matches to the format variables    
+        matchIterator = VAR_REG_EX_FOR_NAME_FORMAT_COMPILED.finditer( nameFormat )
+
+        # and replace them with the corresponding value
+        outputFilename = ''
+        begin = 0
+        oneMatchFound = False
+        for m in matchIterator:
+
+            oneMatchFound = True
+
+            outputFilename += nameFormat[begin:m.start()]
+            begin = m.end()
+
+            # get the match
+            label = nameFormat[m.start() + len( DEFAULT_varPrefix ) + 2:m.end() - 1]
+
+            if label == DEFAULT_varBaseName:
+                outputFilename += baseName
+            elif label == DEFAULT_varExtension:
+                outputFilename += extension
+            else:
+                print 'The label', label, 'for the format of the output name is invalid'
+                sys.exit( ERROR_INVALID_NAME_FORMAT_LABEL )
+
+        if oneMatchFound:
+            outputFilename += nameFormat[m.end():]
+        else:
+            outputFilename = nameFormat
 
     return outputFilename
 
@@ -161,7 +167,7 @@ if __name__ == "__main__":
     parser.add_argument( '-n', '--nameFormat',
                          type = str,
                          action = 'store',
-                         help = 'name format: ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '} indicates the original file basename, ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} the original extensions ( default is ' + DEFAULT_nameFormat + ' )',
+                         help = 'name format convenience variables: ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '} indicates the original file basename, ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} the original extensions ( default is ' + DEFAULT_nameFormat + ' ). If empty the same name and extension of the input file will be used.',
                          default = DEFAULT_nameFormat )
 
     parser.add_argument( '-c', '--command',
