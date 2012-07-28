@@ -26,6 +26,7 @@ import argparse
 import os
 import sys
 import re
+import multiprocessing
 
 VERSION = '0.1'
 
@@ -51,16 +52,61 @@ VAR_REG_EX_FOR_NAME_FORMAT_COMPILED = re.compile( VAR_REG_EX_FOR_NAME_FORMAT )
 ERROR_INPUT_PATH_DOES_NOT_EXIST = -1
 ERROR_INVALID_REGEX = -2
 ERROR_INVALID_NAME_FORMAT_LABEL = -3
-ERROR_INVALID_NAME_FORMAT = -4
+ERROR_INVALID_COMMAND_FORMAT_LABEL = -4
 
-def generateOutputFilename( baseName, extension, nameFormat ):
+# this class essentially implements the behavior of a static variable
+class generateMatchIteratorStatic( object ):
+    def __init__( self ):
+        self._matchIterator = None
+    def __call__( self, regEx, nameFormat ):
+        self.compute( regEx, nameFormat )
+        return self._matchIterator
+    def __iter( self ):
+        return self._matchIterator
+    def compute( self, regEx, nameFormat ):
+        self._matchIterator = regEx.finditer( nameFormat )
 
-    if nameFormat == '':
+generateMatchIterator = generateMatchIteratorStatic()
+
+def generateCommand( inOutPair, args ):
+
+    # detect all the matches to the format variables    
+    matchIterator = generateMatchIterator( VAR_REG_EX_FOR_NAME_FORMAT_COMPILED, args.command )
+
+    # and replace them with the corresponding value
+    cmd = ''
+    begin = 0
+    for m in matchIterator:
+
+        cmd += args.command[begin:m.start()]
+        begin = m.end()
+
+        # get the match
+        label = args.command[m.start() + len( DEFAULT_varPrefix ) + 2:m.end() - 1]
+
+        if label == DEFAULT_varInFile:
+            cmd += "\"" + inOutPair[0] + "\""
+        elif label == DEFAULT_varOutFile:
+            cmd += "\"" + inOutPair[1] + "\""
+        else:
+            return None
+
+    cmd += args.command[m.end():]
+
+    return cmd
+
+def generateOutputFilename( filename, args ):
+
+    # decompose the input filename
+    dirName, name = os.path.split( filename )
+    baseName, extension = os.path.splitext( name )
+
+    if args.nameFormat == '':
         outputFilename = baseName + extension
     else:
 
         # detect all the matches to the format variables    
-        matchIterator = VAR_REG_EX_FOR_NAME_FORMAT_COMPILED.finditer( nameFormat )
+        matchIterator = generateMatchIterator( VAR_REG_EX_FOR_NAME_FORMAT_COMPILED, args.nameFormat )
 
         # and replace them with the corresponding value
         outputFilename = ''
@@ -70,11 +116,11 @@ def generateOutputFilename( baseName, extension, nameFormat ):
 
             oneMatchFound = True
 
-            outputFilename += nameFormat[begin:m.start()]
+            outputFilename += args.nameFormat[begin:m.start()]
             begin = m.end()
 
             # get the match
-            label = nameFormat[m.start() + len( DEFAULT_varPrefix ) + 2:m.end() - 1]
+            label = args.nameFormat[m.start() + len( DEFAULT_varPrefix ) + 2:m.end() - 1]
 
             if label == DEFAULT_varBaseName:
                 outputFilename += baseName
@@ -85,24 +131,21 @@ def generateOutputFilename( baseName, extension, nameFormat ):
                 sys.exit( ERROR_INVALID_NAME_FORMAT_LABEL )
 
         if oneMatchFound:
-            outputFilename += nameFormat[m.end():]
+            outputFilename += args.nameFormat[m.end():]
         else:
-            outputFilename = nameFormat
+            outputFilename = args.nameFormat
 
-    return outputFilename
+    return os.path.join( args.outputPath, outputFilename )
 
-def processFile( filename, args ):
-
-    # decompose the input filename
-    dirName, name = os.path.split( filename )
-    baseName, ext = os.path.splitext( name )
-
-    # generate the output filename
-    outputFilename = generateOutputFilename( baseName, ext, args.nameFormat )
-    outputFilename = os.path.join( args.outputPath, outputFilename )
+def worker( inOutPair, args ):
 
     if args.verbosity > 1:
-        print 'Processing', filename, ' -> ', outputFilename
+        print 'Processing', inOutPair[0], ' into ', inOutPair[1]
+
+    cmd = generateCommand( inOutPair, args )
+    if args.verbosity > 2:
+        print 'Executing', cmd
+
 
 def run( args ):
 
@@ -123,6 +166,7 @@ def run( args ):
         sys.exit( ERROR_INVALID_REGEX )
 
     # check if we do not need to recurse or not
+    inOutPairs = []
     if args.recursive:
 
         for dirname, dirnames, filenames in os.walk( args.inputPath ):
@@ -130,15 +174,39 @@ def run( args ):
             for filename in filenames:
 
                 if pattern.search( filename ):
-                    processFile( os.path.join( dirname, filename ), args )
+
+                    inputFilename = os.path.join( dirname, filename )
+                    outputFilename = generateOutputFilename( inputFilename, args )
+                    inOutPair = ( inputFilename, outputFilename )
+                    inOutPairs.append( inOutPair )
 
     else:
 
         for item in os.listdir( args.inputPath ):
 
-            filename = os.path.join( args.inputPath, item )
-            if os.path.isfile( filename ) and pattern.search( filename ):
-                processFile( filename, args )
+            inputFilename = os.path.join( args.inputPath, item )
+            if os.path.isfile( inputFilename ) and pattern.search( inputFilename ):
+                outputFilename = generateOutputFilename( inputFilename, args )
+                inOutPair = ( inputFilename, outputFilename )
+                inOutPairs.append( inOutPair )
+
+    if args.verbosity > 1:
+        print 'Processing', str( len( inOutPairs ) ), 'files'
+
+    # spawn the jobs
+    if args.parallel:
+        jobs = []
+        for p in inOutPairs:
+            process = multiprocessing.Process( target = worker, args = ( p, args, ) )
+            jobs.append( process )
+            process.start()
+
+        for j in jobs:
+            j.join()
+
+    else:
+        for p in inOutPairs:
+            worker( p, args )
 
 if __name__ == "__main__":
 
@@ -187,10 +255,10 @@ if __name__ == "__main__":
 
     parser.add_argument( '-v', '--verbosity',
                          type = int,
-                         choices = [0, 1, 2],
+                         choices = [0, 1, 2, 3],
                          action = 'store',
                          default = DEFAULT_verbose,
-                         help = 'increase output verbosity. 0 is no output, 1 is output from the function applied to the files, 2 is output from %(prog)s ( default is ' + str( DEFAULT_verbose ) + ' )' )
+                         help = 'increase output verbosity. 0 is no output, 1 is output from the function applied to the files, 2 is output from %(prog)s, 3 is further debug info ( default is ' + str( DEFAULT_verbose ) + ' )' )
 
     parser.add_argument( '--version',
                          action = 'version',
