@@ -27,8 +27,17 @@ import os
 import sys
 import re
 import multiprocessing
+import subprocess
+import csv
+import Queue
 
 VERSION = '0.1'
+
+# levels of verbosity
+VERBOSE_NONE = 0x00
+VERBOSE_EXEC = 0x01
+VERBOSE_FILE_PROCESSOR = 0x01 << 1
+VERBOSE_FILE_PROCESSOR_DEBUG = 0x01 << 2
 
 # defaults
 DEFAULT_varMarker = '$'
@@ -40,7 +49,10 @@ DEFAULT_varOutFile = 'OUT'
 
 #DEFAULT_nameFormat = DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '}_new' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '}'
 DEFAULT_nameFormat = ''
-DEFAULT_verbose = 1
+DEFAULT_verbose = VERBOSE_FILE_PROCESSOR
+#DEFAULT_logFilename = './fileProcessorLog.csv'
+DEFAULT_logFilename = None
+DEFAULT_fileFilter = None
 
 # globals
 
@@ -53,6 +65,7 @@ ERROR_INPUT_PATH_DOES_NOT_EXIST = -1
 ERROR_INVALID_REGEX = -2
 ERROR_INVALID_NAME_FORMAT_LABEL = -3
 ERROR_INVALID_COMMAND_FORMAT_LABEL = -4
+ERROR_GENERIC_EXCEPTION = -5
 
 # this class essentially implements the behavior of a static variable
 class generateMatchIteratorStatic( object ):
@@ -67,6 +80,21 @@ class generateMatchIteratorStatic( object ):
         self._matchIterator = regEx.finditer( nameFormat )
 
 generateMatchIterator = generateMatchIteratorStatic()
+
+# see http://stackoverflow.com/questions/287871/print-in-terminal-with-colors-using-python
+class Colors:
+    EXEC = '\033[94m'
+    FILE_PROCESSOR = '\033[92m'
+    FILE_PROCESSOR_DEBUG = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+
+    def disable( self ):
+        self.EXEC = ''
+        self.FILE_PROCESSOR = ''
+        self.FILE_PROCESSOR_DEBUG = ''
+        self.FAIL = ''
+        self.ENDC = ''
 
 def generateCommand( inOutPair, args ):
 
@@ -101,7 +129,7 @@ def generateOutputFilename( filename, args ):
     dirName, name = os.path.split( filename )
     baseName, extension = os.path.splitext( name )
 
-    if args.nameFormat == '':
+    if args.nameFormat == None:
         outputFilename = baseName + extension
     else:
 
@@ -137,33 +165,42 @@ def generateOutputFilename( filename, args ):
 
     return os.path.join( args.outputPath, outputFilename )
 
-def worker( inOutPair, args ):
+def worker( inOutPair, args, outputQueue ):
 
-    if args.verbosity > 1:
-        print 'Processing', inOutPair[0], ' into ', inOutPair[1]
+    if args.verbosity & VERBOSE_FILE_PROCESSOR:
+        print Colors.FILE_PROCESSOR + 'Processing' + Colors.ENDC, inOutPair[0], Colors.FILE_PROCESSOR + ' -> ' + Colors.ENDC, inOutPair[1]
 
     cmd = generateCommand( inOutPair, args )
-    if args.verbosity > 2:
-        print 'Executing', cmd
+    if args.verbosity & VERBOSE_FILE_PROCESSOR_DEBUG:
+        print Colors.FILE_PROCESSOR_DEBUG + 'Executing' + Colors.ENDC, cmd
 
+    proc = subprocess.Popen( [cmd], shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE )
+    output, errors = proc.communicate()
+
+    outputQueue.put( ( proc, cmd, output, errors ) )
+    if args.verbosity & VERBOSE_EXEC:
+        print Colors.EXEC + output + Colors.ENDC
 
 def run( args ):
 
     # check input path
     if not os.path.isdir( args.inputPath ):
-        print 'Error: the input path', args.inputPath, 'does not exist'
+        print Colors.FAIL + 'Error: the input path', args.inputPath, 'does not exist' + Colors.ENDC
         sys.exit( ERROR_INPUT_PATH_DOES_NOT_EXIST )
 
     # check if output path needs to be created
     if not os.path.exists( args.outputPath ):
         os.makedirs( args.outputPath )
 
-    try:
-        pattern = re.compile( args.fileFilter )
-    except:
-        print 'The regular expression', args.fileFilter, 'is invalid'
-        print 'Sorry dude. You could be hitting on of these two bugs: http: // bugs.python.org / issue2537 or http: // bugs.python.org / issue214033'
-        sys.exit( ERROR_INVALID_REGEX )
+    if args.fileFilter:
+        try:
+            pattern = re.compile( args.fileFilter )
+        except:
+            print Colors.FAIL + 'The regular expression', args.fileFilter, 'is invalid' + Colors.ENDC
+            print Colors.FAIL + 'Sorry dude. You could be hitting on of these two bugs: http://bugs.python.org/issue2537 or http://bugs.python.org/issue214033' + Colors.ENDC
+            sys.exit( ERROR_INVALID_REGEX )
+    else:
+        pattern = None
 
     # check if we do not need to recurse or not
     inOutPairs = []
@@ -173,7 +210,7 @@ def run( args ):
 
             for filename in filenames:
 
-                if pattern.search( filename ):
+                if not pattern or pattern.search( filename ):
 
                     inputFilename = os.path.join( dirname, filename )
                     outputFilename = generateOutputFilename( inputFilename, args )
@@ -185,19 +222,20 @@ def run( args ):
         for item in os.listdir( args.inputPath ):
 
             inputFilename = os.path.join( args.inputPath, item )
-            if os.path.isfile( inputFilename ) and pattern.search( inputFilename ):
+            if os.path.isfile( inputFilename ) and ( not pattern or pattern.search( inputFilename ) ):
                 outputFilename = generateOutputFilename( inputFilename, args )
                 inOutPair = ( inputFilename, outputFilename )
                 inOutPairs.append( inOutPair )
 
-    if args.verbosity > 1:
-        print 'Processing', str( len( inOutPairs ) ), 'files'
+    if args.verbosity & VERBOSE_FILE_PROCESSOR:
+        print Colors.FILE_PROCESSOR + 'Processing' + Colors.ENDC, str( len( inOutPairs ) ), Colors.FILE_PROCESSOR + 'files' + Colors.ENDC
 
     # spawn the jobs
     if args.parallel:
+        outputQueue = multiprocessing.Queue()
         jobs = []
         for p in inOutPairs:
-            process = multiprocessing.Process( target = worker, args = ( p, args, ) )
+            process = multiprocessing.Process( target = worker, args = ( p, args, outputQueue, ) )
             jobs.append( process )
             process.start()
 
@@ -205,8 +243,18 @@ def run( args ):
             j.join()
 
     else:
+        outputQueue = Queue.Queue()
         for p in inOutPairs:
-            worker( p, args )
+            worker( p, args, outputQueue )
+
+    # produce the log file
+    if args.logFilename:
+        fOut = open( args.logFilename, 'wb' )
+        writer = csv.writer( fOut, delimiter = ',', quotechar = '"', quoting = csv.QUOTE_ALL )
+        writer.writerow( ( '# command', 'stdout', 'stderr' ) )
+        while not outputQueue.empty():
+            writer.writerow( ( outputQueue.get()[1], outputQueue.get()[2], outputQueue.get()[3] ) )
+        fOut.close()
 
 if __name__ == "__main__":
 
@@ -216,7 +264,7 @@ if __name__ == "__main__":
     parser.add_argument( '-i', '--inputPath',
                          type = str,
                          action = 'store',
-                         help = 'the folder to crawl',
+                         help = 'the folder to traverse',
                          required = True )
 
     parser.add_argument( '-o', '--outputPath',
@@ -229,14 +277,16 @@ if __name__ == "__main__":
     parser.add_argument( '-f', '--fileFilter',
                          type = str,
                          action = 'store',
-                         help = 'regular expression to filter the input files',
-                         required = True )
+                         help = 'regular expression used to filter the input files (default is ' + str( DEFAULT_fileFilter ) + ')',
+                         default = DEFAULT_fileFilter,
+                         required = False )
 
     parser.add_argument( '-n', '--nameFormat',
                          type = str,
                          action = 'store',
-                         help = 'name format convenience variables: ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '} indicates the original file basename, ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} the original extensions ( default is ' + DEFAULT_nameFormat + ' ). If empty the same name and extension of the input file will be used.',
-                         default = DEFAULT_nameFormat )
+                         help = 'name format convenience variables: ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '} indicates the original file basename, ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} the original extensions. If empty the same name and extension of the input file will be used.',
+                         default = DEFAULT_nameFormat,
+                         required = False )
 
     parser.add_argument( '-c', '--command',
                          type = str,
@@ -249,27 +299,35 @@ if __name__ == "__main__":
                          action = 'store_true',
                          help = 'recurse inside the folders' )
 
+
     parser.add_argument( '-p', '--parallel',
                          action = 'store_true',
-                         help = 'process the files in parallel. Note that the suggested value for verbose is 0.' )
+                         help = 'process the files in parallel. In this case the suggested verbosity value is ' + str( VERBOSE_NONE ) )
+
+
+    parser.add_argument( '-l', '--logFilename',
+                         type = str,
+                         action = 'store',
+                         help = 'log CSV file (default is ' + str( DEFAULT_logFilename ) + ')',
+                         default = DEFAULT_logFilename,
+                         required = False )
 
     parser.add_argument( '-v', '--verbosity',
                          type = int,
-                         choices = [0, 1, 2, 3],
                          action = 'store',
                          default = DEFAULT_verbose,
-                         help = 'increase output verbosity. 0 is no output, 1 is output from the function applied to the files, 2 is output from %(prog)s, 3 is further debug info ( default is ' + str( DEFAULT_verbose ) + ' )' )
+                         help = 'bit field value to specify the output verbosity: ' + str( VERBOSE_NONE ) + ' is no output, ' + str( VERBOSE_EXEC ) + ' is output from the function applied to the files, ' + str( VERBOSE_FILE_PROCESSOR ) + ' is output from %(prog)s, ' + str( VERBOSE_FILE_PROCESSOR_DEBUG ) + ' is further debug info ( default is ' + str( DEFAULT_verbose ) + ' )' )
 
     parser.add_argument( '--version',
                          action = 'version',
-                         version = ' % ( prog )s ' + str( VERSION ) )
+                         version = ' %(prog)s ' + str( VERSION ) )
 
     args = parser.parse_args()
 
     if args.outputPath == None:
         args.outputPath = args.inputPath
-        if args.verbosity > 0:
-            print 'Defaulting output path to', args.outputPath
+        if args.verbosity & VERBOSE_FILE_PROCESSOR:
+            print Colors.FILE_PROCESSOR + 'Defaulting output path to' + Colors.ENDC, args.outputPath
 
     # let'd go !
     run( args )
