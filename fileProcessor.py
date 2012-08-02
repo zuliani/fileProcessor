@@ -222,34 +222,34 @@ def run( args ):
         pattern = None
 
     # check if we do not need to recurse or not
-    inOutPairs = []
-    counter = args.counterOffset
+    inputFilenames = []
     if args.recursive:
 
         for dirname, dirnames, filenames in os.walk( args.inputPath ):
-
             for filename in filenames:
-
                 if not pattern or pattern.search( filename ):
-
-                    inputFilename = os.path.join( dirname, filename )
-                    outputFilename = generateOutputFilename( inputFilename, args, counter )
-                    inOutPair = ( inputFilename, outputFilename )
-                    inOutPairs.append( inOutPair )
-
-                    counter += 1
+                    inputFilenames.append( os.path.join( dirname, filename ) )
 
     else:
 
         for item in os.listdir( args.inputPath ):
-
             inputFilename = os.path.join( args.inputPath, item )
             if os.path.isfile( inputFilename ) and ( not pattern or pattern.search( inputFilename ) ):
-                outputFilename = generateOutputFilename( inputFilename, args, counter )
-                inOutPair = ( inputFilename, outputFilename )
-                inOutPairs.append( inOutPair )
+                inputFilenames.append( inputFilename )
 
-                counter += 1
+    # sort the input list in a human friendly manner
+    # see http://nedbatchelder.com/blog/200712/human_sorting.html
+
+    # form the I/O pairs
+    inOutPairs = []
+    counter = args.counterOffset
+    for inputFilename in inputFilenames:
+        outputFilename = generateOutputFilename( inputFilename, args, counter )
+        inOutPair = ( inputFilename, outputFilename )
+        inOutPairs.append( inOutPair )
+
+        counter += 1
+
 
     if args.verbosity & VERBOSE_FILE_PROCESSOR:
         print Colors.FILE_PROCESSOR + 'Processing' + Colors.ENDC, str( len( inOutPairs ) ), Colors.FILE_PROCESSOR + 'files' + Colors.ENDC
