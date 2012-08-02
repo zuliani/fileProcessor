@@ -44,6 +44,7 @@ DEFAULT_varMarker = '$'
 DEFAULT_varPrefix = 'FP_'
 DEFAULT_varBaseName = 'BASENAME'
 DEFAULT_varExtension = 'EXTENSION'
+DEFAULT_varCounter = 'COUNTER'
 DEFAULT_varInFile = 'IN'
 DEFAULT_varOutFile = 'OUT'
 
@@ -53,6 +54,7 @@ DEFAULT_verbose = VERBOSE_FILE_PROCESSOR
 #DEFAULT_logFilename = './fileProcessorLog.csv'
 DEFAULT_logFilename = None
 DEFAULT_fileFilter = None
+DEFAULT_counterOffset = 0
 
 # globals
 
@@ -123,7 +125,20 @@ def generateCommand( inOutPair, args ):
 
     return cmd
 
-def generateOutputFilename( filename, args ):
+def generateCounter( counter, label ):
+    counterStr = None
+
+    if counter:
+        numberOfDigits = int( label[len( DEFAULT_varCounter ):] )
+
+        if numberOfDigits > 0:
+            counterStr = ( '%0' + str( numberOfDigits ) + 'd' ) % counter
+        else:
+            counterStr = str( counter )
+
+    return counterStr
+
+def generateOutputFilename( filename, args, counter = None ):
 
     # decompose the input filename
     dirName, name = os.path.split( filename )
@@ -154,6 +169,10 @@ def generateOutputFilename( filename, args ):
                 outputFilename += baseName
             elif label == DEFAULT_varExtension:
                 outputFilename += extension
+            elif label[0:len( DEFAULT_varCounter )] == DEFAULT_varCounter:
+                counterStr = generateCounter( counter, label )
+                if counterStr:
+                    outputFilename += counterStr
             else:
                 print 'The label', label, 'for the format of the output name is invalid'
                 sys.exit( ERROR_INVALID_NAME_FORMAT_LABEL )
@@ -204,6 +223,7 @@ def run( args ):
 
     # check if we do not need to recurse or not
     inOutPairs = []
+    counter = args.counterOffset
     if args.recursive:
 
         for dirname, dirnames, filenames in os.walk( args.inputPath ):
@@ -213,9 +233,11 @@ def run( args ):
                 if not pattern or pattern.search( filename ):
 
                     inputFilename = os.path.join( dirname, filename )
-                    outputFilename = generateOutputFilename( inputFilename, args )
+                    outputFilename = generateOutputFilename( inputFilename, args, counter )
                     inOutPair = ( inputFilename, outputFilename )
                     inOutPairs.append( inOutPair )
+
+                    counter += 1
 
     else:
 
@@ -223,9 +245,11 @@ def run( args ):
 
             inputFilename = os.path.join( args.inputPath, item )
             if os.path.isfile( inputFilename ) and ( not pattern or pattern.search( inputFilename ) ):
-                outputFilename = generateOutputFilename( inputFilename, args )
+                outputFilename = generateOutputFilename( inputFilename, args, counter )
                 inOutPair = ( inputFilename, outputFilename )
                 inOutPairs.append( inOutPair )
+
+                counter += 1
 
     if args.verbosity & VERBOSE_FILE_PROCESSOR:
         print Colors.FILE_PROCESSOR + 'Processing' + Colors.ENDC, str( len( inOutPairs ) ), Colors.FILE_PROCESSOR + 'files' + Colors.ENDC
@@ -258,8 +282,15 @@ def run( args ):
 
 if __name__ == "__main__":
 
+    epilogStr = 'Notes.\n\n'
+    epilogStr += 'The string containing variables should be enclosed bwtween SINGLE QUOTES ('') in order to avoid bash expansion.\n'
+    epilogStr += 'The name format convenience variables available are listed here in the following.\n'
+    epilogStr += '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '} indicates the basename of the input file.\n'
+    epilogStr += '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} indicates the extension of the input file.\n'
+    epilogStr += '{' + DEFAULT_varPrefix + DEFAULT_varCounter + 'N} indicates a counter with N digits (if N = 0 no leading zeros will be prepended).\n'
+
     parser = argparse.ArgumentParser( description = 'Process a set of files applying a given function to each of them.',
-                                      epilog = 'Note that string containing variables should be included in SINGLE QUOTES in order to avoid bash expansion.' )
+                                      epilog = epilogStr )
 
     parser.add_argument( '-i', '--inputPath',
                          type = str,
@@ -284,8 +315,15 @@ if __name__ == "__main__":
     parser.add_argument( '-n', '--nameFormat',
                          type = str,
                          action = 'store',
-                         help = 'name format convenience variables: ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '} indicates the original file basename, ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} the original extensions. If empty the same name and extension of the input file will be used.',
+                         help = 'name format convenience variables',
                          default = DEFAULT_nameFormat,
+                         required = False )
+
+    parser.add_argument( '--counterOffset',
+                         type = int,
+                         action = 'store',
+                         help = 'counter offset. This is used only if you use the ' + '{' + DEFAULT_varPrefix + DEFAULT_varCounter + 'N} format variable',
+                         default = DEFAULT_counterOffset,
                          required = False )
 
     parser.add_argument( '-c', '--command',
@@ -299,11 +337,9 @@ if __name__ == "__main__":
                          action = 'store_true',
                          help = 'recurse inside the folders' )
 
-
     parser.add_argument( '-p', '--parallel',
                          action = 'store_true',
                          help = 'process the files in parallel. In this case the suggested verbosity value is ' + str( VERBOSE_NONE ) )
-
 
     parser.add_argument( '-l', '--logFilename',
                          type = str,
