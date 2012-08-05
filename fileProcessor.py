@@ -31,16 +31,20 @@ import subprocess
 import csv
 import Queue
 
-VERSION = '0.1'
+# versions list
+VERSION = '0.1 - alpha'
 
 # levels of verbosity
 VERBOSE_NONE = 0x00
 VERBOSE_EXEC = 0x01
 VERBOSE_FILE_PROCESSOR = 0x01 << 1
 VERBOSE_FILE_PROCESSOR_DEBUG = 0x01 << 2
+SORT_NONE = 0
+SORT_LEXICOGRAPHICAL = 1
+SORT_HUMAN = 2
 
 # defaults
-DEFAULT_varMarker = '$'
+DEFAULT_varMarker = '$'             # do not change this!
 DEFAULT_varPrefix = 'FP_'
 DEFAULT_varBaseName = 'BASENAME'
 DEFAULT_varExtension = 'EXTENSION'
@@ -51,6 +55,7 @@ DEFAULT_varOutFile = 'OUT'
 #DEFAULT_nameFormat = DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '}_new' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '}'
 DEFAULT_nameFormat = ''
 DEFAULT_verbose = VERBOSE_FILE_PROCESSOR
+DEFAULT_sortMode = SORT_HUMAN
 #DEFAULT_logFilename = './fileProcessorLog.csv'
 DEFAULT_logFilename = None
 DEFAULT_fileFilter = None
@@ -67,7 +72,8 @@ ERROR_INPUT_PATH_DOES_NOT_EXIST = -1
 ERROR_INVALID_REGEX = -2
 ERROR_INVALID_NAME_FORMAT_LABEL = -3
 ERROR_INVALID_COMMAND_FORMAT_LABEL = -4
-ERROR_GENERIC_EXCEPTION = -5
+ERROR_COMMAND_PARSING = -5
+ERROR_GENERIC_EXCEPTION = -6
 
 # this class essentially implements the behavior of a static variable
 class generateMatchIteratorStatic( object ):
@@ -106,7 +112,10 @@ def generateCommand( inOutPair, args ):
     # and replace them with the corresponding value
     cmd = ''
     begin = 0
+    oneMatchFound = False
     for m in matchIterator:
+
+        oneMatchFound = True
 
         cmd += args.command[begin:m.start()]
         begin = m.end()
@@ -121,7 +130,10 @@ def generateCommand( inOutPair, args ):
         else:
             return None
 
-    cmd += args.command[m.end():]
+    if oneMatchFound:
+        cmd += args.command[m.end():]
+    else:
+        cmd = args.command
 
     return cmd
 
@@ -189,16 +201,45 @@ def worker( inOutPair, args, outputQueue ):
     if args.verbosity & VERBOSE_FILE_PROCESSOR:
         print Colors.FILE_PROCESSOR + 'Processing' + Colors.ENDC, inOutPair[0], Colors.FILE_PROCESSOR + ' -> ' + Colors.ENDC, inOutPair[1]
 
+    envDict = {DEFAULT_varPrefix + DEFAULT_varInFile: inOutPair[0], DEFAULT_varPrefix + DEFAULT_varOutFile: inOutPair[1]}
+
     cmd = generateCommand( inOutPair, args )
     if args.verbosity & VERBOSE_FILE_PROCESSOR_DEBUG:
         print Colors.FILE_PROCESSOR_DEBUG + 'Executing' + Colors.ENDC, cmd
 
-    proc = subprocess.Popen( [cmd], shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE )
+    proc = subprocess.Popen( [cmd], shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE, env = envDict )
     output, errors = proc.communicate()
 
     outputQueue.put( ( proc, cmd, output, errors ) )
     if args.verbosity & VERBOSE_EXEC:
         print Colors.EXEC + output + Colors.ENDC
+
+def splitInputFilenames( s ):
+
+    dir_name, name = os.path.split( s )
+    base, ext = os.path.splitext( name )
+
+    # split the string into text and number substrings
+    components = [int( c ) if c.isdigit() else c for c in re.split( '([0-9]+)', base )]
+
+    # try to be smart:
+    # - ignore case
+    # - use number first and strings later
+    # - remove string composed only of spaces
+    strComponents = []
+    numComponents = []
+    for c in components:
+        try:
+            cStripped = c.strip()
+
+            if len( cStripped ):
+                strComponents.append( cStripped.lower() )
+        except AttributeError:
+            numComponents.append( c )
+
+    key = tuple( numComponents + strComponents )
+
+    return key
 
 def run( args ):
 
@@ -239,6 +280,10 @@ def run( args ):
 
     # sort the input list in a human friendly manner
     # see http://nedbatchelder.com/blog/200712/human_sorting.html
+    if args.sortMode == SORT_LEXICOGRAPHICAL:
+        inputFilenames = sorted( inputFilenames )
+    elif args.sortMode == SORT_HUMAN:
+        inputFilenames = sorted( inputFilenames, key = splitInputFilenames )
 
     # form the I/O pairs
     inOutPairs = []
@@ -250,7 +295,6 @@ def run( args ):
 
         counter += 1
 
-
     if args.verbosity & VERBOSE_FILE_PROCESSOR:
         print Colors.FILE_PROCESSOR + 'Processing' + Colors.ENDC, str( len( inOutPairs ) ), Colors.FILE_PROCESSOR + 'files' + Colors.ENDC
 
@@ -259,7 +303,7 @@ def run( args ):
         outputQueue = multiprocessing.Queue()
         jobs = []
         for p in inOutPairs:
-            process = multiprocessing.Process( target = worker, args = ( p, args, outputQueue, ) )
+            process = multiprocessing.Process( target = worker, args = ( p, args, outputQueue ) )
             jobs.append( process )
             process.start()
 
@@ -283,11 +327,11 @@ def run( args ):
 if __name__ == "__main__":
 
     epilogStr = 'Notes.\n\n'
-    epilogStr += 'The string containing variables should be enclosed bwtween SINGLE QUOTES ('') in order to avoid bash expansion.\n'
-    epilogStr += 'The name format convenience variables available are listed here in the following.\n'
-    epilogStr += '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '} indicates the basename of the input file.\n'
-    epilogStr += '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} indicates the extension of the input file.\n'
-    epilogStr += '{' + DEFAULT_varPrefix + DEFAULT_varCounter + 'N} indicates a counter with N digits (if N = 0 no leading zeros will be prepended).\n'
+    epilogStr += 'The string containing variables should be enclosed between SINGLE QUOTES (\') in order to avoid bash expansion.\n'
+    epilogStr += 'The name format convenience variables available are the following.\n'
+    epilogStr += DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '} indicates the basename of the input file.\n'
+    epilogStr += DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} indicates the extension of the input file.\n'
+    epilogStr += DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varCounter + 'N} indicates a counter with N digits ( if N = 0 no leading zeros will be prepended ).\n'
 
     parser = argparse.ArgumentParser( description = 'Process a set of files applying a given function to each of them.',
                                       epilog = epilogStr )
@@ -295,7 +339,7 @@ if __name__ == "__main__":
     parser.add_argument( '-i', '--inputPath',
                          type = str,
                          action = 'store',
-                         help = 'the folder to traverse',
+                         help = 'the folder containing the files to process',
                          required = True )
 
     parser.add_argument( '-o', '--outputPath',
@@ -305,24 +349,30 @@ if __name__ == "__main__":
                          default = None,
                          required = False )
 
+    parser.add_argument( '-s', '--sortMode',
+                         type = int,
+                         action = 'store',
+                         default = DEFAULT_sortMode,
+                         help = 'defines the sorting order in which input the files will be processed: ' + str( SORT_NONE ) + ' is no sorting, ' + str( SORT_LEXICOGRAPHICAL ) + ' is lexicographical sorting, ' + str( SORT_HUMAN ) + ' is human friendly sorting. Default is ' + str( DEFAULT_sortMode ) )
+
     parser.add_argument( '-f', '--fileFilter',
                          type = str,
                          action = 'store',
-                         help = 'regular expression used to filter the input files (default is ' + str( DEFAULT_fileFilter ) + ')',
+                         help = 'regular expression used to filter the input files. If not specified, all the files will be processed ( default is ' + str( DEFAULT_fileFilter ) + ' )',
                          default = DEFAULT_fileFilter,
                          required = False )
 
     parser.add_argument( '-n', '--nameFormat',
                          type = str,
                          action = 'store',
-                         help = 'name format convenience variables',
+                         help = 'specifies the output name format using convenience variables',
                          default = DEFAULT_nameFormat,
                          required = False )
 
     parser.add_argument( '--counterOffset',
                          type = int,
                          action = 'store',
-                         help = 'counter offset. This is used only if you use the ' + '{' + DEFAULT_varPrefix + DEFAULT_varCounter + 'N} format variable',
+                         help = 'counter offset. This option is used only if you use the ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varCounter + 'N} format variable and defines the initial value for the counter',
                          default = DEFAULT_counterOffset,
                          required = False )
 
@@ -335,7 +385,7 @@ if __name__ == "__main__":
 
     parser.add_argument( '-r', '--recursive',
                          action = 'store_true',
-                         help = 'recurse inside the folders' )
+                         help = 'recurse inside the input folder' )
 
     parser.add_argument( '-p', '--parallel',
                          action = 'store_true',
@@ -344,7 +394,7 @@ if __name__ == "__main__":
     parser.add_argument( '-l', '--logFilename',
                          type = str,
                          action = 'store',
-                         help = 'log CSV file (default is ' + str( DEFAULT_logFilename ) + ')',
+                         help = 'log CSV file that records the activity of %(prog)s ( default is ' + str( DEFAULT_logFilename ) + ' )',
                          default = DEFAULT_logFilename,
                          required = False )
 
@@ -352,7 +402,7 @@ if __name__ == "__main__":
                          type = int,
                          action = 'store',
                          default = DEFAULT_verbose,
-                         help = 'bit field value to specify the output verbosity: ' + str( VERBOSE_NONE ) + ' is no output, ' + str( VERBOSE_EXEC ) + ' is output from the function applied to the files, ' + str( VERBOSE_FILE_PROCESSOR ) + ' is output from %(prog)s, ' + str( VERBOSE_FILE_PROCESSOR_DEBUG ) + ' is further debug info ( default is ' + str( DEFAULT_verbose ) + ' )' )
+                         help = 'bit field value to specify the output verbosity: ' + str( VERBOSE_NONE ) + ' is no output, ' + str( VERBOSE_EXEC ) + ' is output from the command applied to the files, ' + str( VERBOSE_FILE_PROCESSOR ) + ' is output from %(prog)s, ' + str( VERBOSE_FILE_PROCESSOR_DEBUG ) + ' is further debug info ( default is ' + str( DEFAULT_verbose ) + ' )' )
 
     parser.add_argument( '--version',
                          action = 'version',
