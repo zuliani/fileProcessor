@@ -79,6 +79,7 @@ ERROR_GENERIC_EXCEPTION = -6
 
 # this class essentially implements the behavior of a static variable
 
+
 class generateMatchIteratorStatic(object):
     def __init__(self):
         self._matchIterator = None
@@ -97,6 +98,7 @@ generateMatchIterator = generateMatchIteratorStatic()
 
 # see http://stackoverflow.com/questions/287871/print-in-terminal-with-colors-
 # using-python
+
 
 class Colors:
     EXEC = '\033[94m'
@@ -354,15 +356,23 @@ def run(args):
 
 if __name__ == "__main__":
 
-    epilogStr = 'Notes.\n\n'
-    epilogStr += 'The string containing variables should be enclosed between SINGLE QUOTES (\') in order to avoid bash expansion.\n'
-    epilogStr += 'The name format convenience variables available are the following.\n'
-    epilogStr += DEFAULT_varMarker + '{' + DEFAULT_varPrefix + \
-        DEFAULT_varBaseName + '} indicates the basename of the input file.\n'
-    epilogStr += DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} indicates the extension of the input file.\n'
-    epilogStr += DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varCounter + 'N} indicates a counter with N digits ( if N = 0 no leading zeros will be prepended ).\n'
+    descriptionStr = 'Process a set of files applying a command to each of them.'
 
-    parser = argparse.ArgumentParser(description='Process a set of files applying a given function to each of them.',
+    epilogStr = 'Notes.\n\n'
+    epilogStr += '- The string containing variables should be enclosed between SINGLE QUOTES (\') in order to avoid bash expansion.\n'
+    epilogStr += '- The name format convenience variables available are the following.\n'
+    epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + \
+        DEFAULT_varBaseName + '} indicates the basename of the input file.\n'
+    epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} indicates the extension of the input file (including the separator).\n'
+    epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varCounter + 'N} indicates a counter with N digits ( if N = 0 no leading zeros will be prepended ).\n'
+    epilogStr += '\nExample:\n\n'
+    epilogStr += 'fileProcessor -i ./myInputFolder -o ./myOutputFolder -f \'(\\.bin)\\b\' -n \'${FP_BASENAME}_processed${FP_BASENAME}\' -c \'myCommand ${FP_IN} ${FP_OUT}\' -r\n\n'
+    epilogStr += 'The command myCommand will be applied to all the .bin files in the folder myInputFolder and its subfolders.\n'
+    epilogStr += 'The output files will have the _processed string appended after the basename and will be written in the\n'
+    epilogStr += 'folder myOutputFolder.'
+
+    parser = argparse.ArgumentParser(formatter_class=argparse.RawDescriptionHelpFormatter,
+                                     description=descriptionStr,
                                      epilog=epilogStr)
 
     parser.add_argument('-i', '--inputPath',
@@ -423,7 +433,7 @@ if __name__ == "__main__":
     parser.add_argument('-l', '--logFilename',
                          type=str,
                          action='store',
-                         help='log CSV file that records the activity of %(prog)s ( default is ' +
+                         help='creates a log CSV file that records the activity of %(prog)s ( default is ' +
                              str(DEFAULT_logFilename) + ' )',
                          default=DEFAULT_logFilename,
                          required=False)
