@@ -50,6 +50,9 @@ DEFAULT_varBaseName = 'BASENAME'
 DEFAULT_varExtension = 'EXTENSION'
 DEFAULT_varCounter = 'COUNTER'
 DEFAULT_varInFile = 'IN'
+DEFAULT_varInFileFolder = 'IN_FOLDER'
+DEFAULT_varInFileBaseName = 'IN_BASENAME'
+DEFAULT_varInFileExtension = 'IN_EXTENSION'
 DEFAULT_varOutFile = 'OUT'
 
 # DEFAULT_nameFormat = DEFAULT_varMarker + '{' + DEFAULT_varPrefix +
@@ -220,7 +223,13 @@ def worker(inOutPair, args, outputQueue):
         print Colors.FILE_PROCESSOR + 'Processing' + Colors.ENDC, inOutPair[
             0], Colors.FILE_PROCESSOR + ' -> ' + Colors.ENDC, inOutPair[1]
 
+    folderName, name = os.path.split( inOutPair[0] )
+    baseName, ext = os.path.splitext( name )
+
     envDict = {DEFAULT_varPrefix + DEFAULT_varInFile: inOutPair[0],
+               DEFAULT_varPrefix + DEFAULT_varInFileFolder: folderName,
+               DEFAULT_varPrefix + DEFAULT_varInFileBaseName: baseName,
+               DEFAULT_varPrefix + DEFAULT_varInFileExtension: ext,
                DEFAULT_varPrefix + DEFAULT_varOutFile: inOutPair[1]}
 
     cmd = generateCommand(inOutPair, args)
@@ -361,12 +370,16 @@ if __name__ == "__main__":
     epilogStr = 'Notes.\n\n'
     epilogStr += '- The string containing variables should be enclosed between SINGLE QUOTES (\') in order to avoid bash expansion.\n'
     epilogStr += '- The name format convenience variables available are the following.\n'
-    epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + \
-        DEFAULT_varBaseName + '} indicates the basename of the input file.\n'
+    epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '} indicates the basename of the input file.\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} indicates the extension of the input file (including the separator).\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varCounter + 'N} indicates a counter with N digits ( if N = 0 no leading zeros will be prepended ).\n'
+    epilogStr += '- The following values are exported to the enviroment of the command that is launched\n'
+    epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFile + '} the full name of the input file\n'
+    epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFileFolder + '} the folder of the input file\n'
+    epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFileBaseName + '} the basename of the input file\n'
+    epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFileExtension + '} the extension of the input file\n'
     epilogStr += '\nExample:\n\n'
-    epilogStr += 'fileProcessor -i ./myInputFolder -o ./myOutputFolder -f \'(\\.bin)\\b\' -n \'${FP_BASENAME}_processed${FP_BASENAME}\' -c \'myCommand ${FP_IN} ${FP_OUT}\' -r\n\n'
+    epilogStr += 'fileProcessor -i ./myInputFolder -o ./myOutputFolder -f \'(\\.bin)\\b\' -n \'${FP_BASENAME}_processed${FP_EXTENSION}\' -c \'myCommand ${FP_IN} ${FP_OUT}\' -r\n\n'
     epilogStr += 'The command myCommand will be applied to all the .bin files in the folder myInputFolder and its subfolders.\n'
     epilogStr += 'The output files will have the _processed string appended after the basename and will be written in the\n'
     epilogStr += 'folder myOutputFolder.'
@@ -418,7 +431,7 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--command',
                          type=str,
                          action='store',
-                         help='the command to apply to the list of files. Note that ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFile + '} denotes the input file, whereas ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varOutFile + '} denotes the output file.',
+                         help='the command to apply to the list of files. Note that ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFile + '} denotes the input file, whereas ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varOutFile + '} denotes the output file (see the notes at the end for more information).',
                          default=None,
                          required=True)
 
