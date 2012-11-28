@@ -49,6 +49,7 @@ DEFAULT_varPrefix = 'FP_'
 DEFAULT_varBaseName = 'BASENAME'
 DEFAULT_varExtension = 'EXTENSION'
 DEFAULT_varCounter = 'COUNTER'
+DEFAULT_varOrigCounter = 'ORIGCOUNTER'
 DEFAULT_varInFile = 'IN'
 DEFAULT_varInFileFolder = 'IN_FOLDER'
 DEFAULT_varInFileBaseName = 'IN_BASENAME'
@@ -81,8 +82,6 @@ ERROR_COMMAND_PARSING = -5
 ERROR_GENERIC_EXCEPTION = -6
 
 # this class essentially implements the behavior of a static variable
-
-
 class generateMatchIteratorStatic(object):
     def __init__(self):
         self._matchIterator = None
@@ -157,8 +156,25 @@ def generateCommand(inOutPair, args):
 def generateCounter(counter, label):
     counterStr = None
 
-    if counter:
+    if not counter is None:
         numberOfDigits = int(label[len(DEFAULT_varCounter):])
+
+        if numberOfDigits > 0:
+            counterStr = ('%0' + str(numberOfDigits) + 'd') % counter
+        else:
+            counterStr = str(counter)
+
+    return counterStr
+
+def getCounterFromName(baseName, label):
+    counterStr = None
+
+    regEx = re.compile('\d+')
+    match = regEx.search(baseName)
+    counter = int(match.group(0))
+
+    if not counter is None:
+        numberOfDigits = int(label[len(DEFAULT_varOrigCounter):])
 
         if numberOfDigits > 0:
             counterStr = ('%0' + str(numberOfDigits) + 'd') % counter
@@ -194,8 +210,7 @@ def generateOutputFilename(filename, args, counter=None):
             begin = m.end()
 
             # get the match
-            label = args.nameFormat[m.start() + len(
-                DEFAULT_varPrefix) + 2:m.end() - 1]
+            label = args.nameFormat[m.start() + len(DEFAULT_varPrefix) + 2:m.end() - 1]
 
             if label == DEFAULT_varBaseName:
                 outputFilename += baseName
@@ -203,6 +218,10 @@ def generateOutputFilename(filename, args, counter=None):
                 outputFilename += extension
             elif label[0:len(DEFAULT_varCounter)] == DEFAULT_varCounter:
                 counterStr = generateCounter(counter, label)
+                if counterStr:
+                    outputFilename += counterStr
+            elif label[0:len(DEFAULT_varOrigCounter)] == DEFAULT_varOrigCounter:
+                counterStr = getCounterFromName(baseName, label)
                 if counterStr:
                     outputFilename += counterStr
             else:
@@ -297,7 +316,7 @@ def run(args):
     else:
         pattern = None
 
-    # check if we do not need to recurse or not
+    # check if we do need to recurse or not
     inputFilenames = []
     if args.recursive:
 
@@ -373,11 +392,13 @@ if __name__ == "__main__":
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '} indicates the basename of the input file.\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} indicates the extension of the input file (including the separator).\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varCounter + 'N} indicates a counter with N digits ( if N = 0 no leading zeros will be prepended ).\n'
+    epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varOrigCounter + 'N} indicates the first counter recovered from the input file name with N digits ( if N = 0 no leading zeros will be prepended ).\n'
     epilogStr += '- The following values are exported to the enviroment of the command that is launched\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFile + '} the full name of the input file\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFileFolder + '} the folder of the input file\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFileBaseName + '} the basename of the input file\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFileExtension + '} the extension of the input file\n'
+    epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varOutFile + '} the full name of the output file\n'
     epilogStr += '\nExample:\n\n'
     epilogStr += 'fileProcessor -i ./myInputFolder -o ./myOutputFolder -f \'(\\.bin)\\b\' -n \'${FP_BASENAME}_processed${FP_EXTENSION}\' -c \'myCommand ${FP_IN} ${FP_OUT}\' -r\n\n'
     epilogStr += 'The command myCommand will be applied to all the .bin files in the folder myInputFolder and its subfolders.\n'
