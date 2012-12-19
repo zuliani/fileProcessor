@@ -55,11 +55,13 @@ DEFAULT_varInFileFolder = 'IN_FOLDER'
 DEFAULT_varInFileBaseName = 'IN_BASENAME'
 DEFAULT_varInFileExtension = 'IN_EXTENSION'
 DEFAULT_varOutFile = 'OUT'
+DEFAULT_varOutFileFolder = 'OUT_FOLDER'
 
 # DEFAULT_nameFormat = DEFAULT_varMarker + '{' + DEFAULT_varPrefix +
 # DEFAULT_varBaseName + '}_new' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix +
 # DEFAULT_varExtension + '}'
-DEFAULT_nameFormat = ''
+DEFAULT_nameFormat = None
+DEFAULT_samplingStep = 1
 DEFAULT_verbose = VERBOSE_FILE_PROCESSOR
 DEFAULT_sortMode = SORT_HUMAN
 #DEFAULT_logFilename = './fileProcessorLog.csv'
@@ -142,6 +144,8 @@ def generateCommand(inOutPair, args):
             cmd += "\"" + inOutPair[0] + "\""
         elif label == DEFAULT_varOutFile:
             cmd += "\"" + inOutPair[1] + "\""
+        elif label == DEFAULT_varOutFileFolder:
+            cmd += "\"" + args.outputPath + "\""
         else:
             return None
 
@@ -190,8 +194,9 @@ def generateOutputFilename(filename, args, counter=None):
     dirName, name = os.path.split(filename)
     baseName, extension = os.path.splitext(name)
 
-    if args.nameFormat == None:
-        outputFilename = baseName + extension
+    if args.nameFormat is None:
+        # outputFilename = baseName + extension
+        outputFilename = None
     else:
 
         # detect all the matches to the format variables
@@ -233,14 +238,19 @@ def generateOutputFilename(filename, args, counter=None):
         else:
             outputFilename = args.nameFormat
 
-    return os.path.join(args.outputPath, outputFilename)
+    if outputFilename:
+        outputFilename = os.path.join(args.outputPath, outputFilename)
+
+    return outputFilename
 
 
 def worker(inOutPair, args, outputQueue):
 
     if args.verbosity & VERBOSE_FILE_PROCESSOR:
-        print Colors.FILE_PROCESSOR + 'Processing' + Colors.ENDC, inOutPair[
-            0], Colors.FILE_PROCESSOR + ' -> ' + Colors.ENDC, inOutPair[1]
+        if inOutPair[1]:
+            print Colors.FILE_PROCESSOR + 'Processing' + Colors.ENDC, inOutPair[0], Colors.FILE_PROCESSOR + ' -> ' + Colors.ENDC, inOutPair[1]
+        else:
+            print Colors.FILE_PROCESSOR + 'Processing' + Colors.ENDC, inOutPair[0], Colors.FILE_PROCESSOR
 
     folderName, name = os.path.split( inOutPair[0] )
     baseName, ext = os.path.splitext( name )
@@ -249,7 +259,10 @@ def worker(inOutPair, args, outputQueue):
                DEFAULT_varPrefix + DEFAULT_varInFileFolder: folderName,
                DEFAULT_varPrefix + DEFAULT_varInFileBaseName: baseName,
                DEFAULT_varPrefix + DEFAULT_varInFileExtension: ext,
-               DEFAULT_varPrefix + DEFAULT_varOutFile: inOutPair[1]}
+               DEFAULT_varPrefix + DEFAULT_varOutFileFolder: args.outputPath}
+
+    if inOutPair[1]:
+        envDict[DEFAULT_varPrefix + DEFAULT_varOutFile] = inOutPair[1]
 
     cmd = generateCommand(inOutPair, args)
     if args.verbosity & VERBOSE_FILE_PROCESSOR_DEBUG:
@@ -262,7 +275,8 @@ def worker(inOutPair, args, outputQueue):
     outputQueue.put((proc, cmd, output, errors))
     if args.verbosity & VERBOSE_EXEC:
         print Colors.EXEC + output + Colors.ENDC
-
+        if errors:
+            print Colors.FAIL + errors + Colors.ENDC
 
 def splitInputFilenames(s):
 
@@ -342,11 +356,14 @@ def run(args):
     # form the I/O pairs
     inOutPairs = []
     counter = args.counterOffset
+    absoluteCounter = 0
     for inputFilename in inputFilenames:
-        outputFilename = generateOutputFilename(inputFilename, args, counter)
-        inOutPair = (inputFilename, outputFilename)
-        inOutPairs.append(inOutPair)
+        if absoluteCounter % args.samplingStep == 0:
+            outputFilename = generateOutputFilename(inputFilename, args, counter)
+            inOutPair = (inputFilename, outputFilename)
+            inOutPairs.append(inOutPair)
 
+        absoluteCounter += 1
         counter += 1
 
     if args.verbosity & VERBOSE_FILE_PROCESSOR:
@@ -386,19 +403,20 @@ if __name__ == "__main__":
 
     descriptionStr = 'Process a set of files applying a command to each of them.'
 
-    epilogStr = 'Notes.\n\n'
-    epilogStr += '- The string containing variables should be enclosed between SINGLE QUOTES (\') in order to avoid bash expansion.\n'
-    epilogStr += '- The name format convenience variables available are the following.\n'
+    epilogStr = 'Notes.\n'
+    epilogStr += '\n- The string containing variables should be enclosed between SINGLE QUOTES (\') in order to avoid bash expansion.\n'
+    epilogStr += '\n- The name format convenience variables available are the following.\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varBaseName + '} indicates the basename of the input file.\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} indicates the extension of the input file (including the separator).\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varCounter + 'N} indicates a counter with N digits ( if N = 0 no leading zeros will be prepended ).\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varOrigCounter + 'N} indicates the first counter recovered from the input file name with N digits ( if N = 0 no leading zeros will be prepended ).\n'
-    epilogStr += '- The following values are exported to the enviroment of the command that is launched\n'
+    epilogStr += '\n- The following values are exported to the enviroment of the command that is launched\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFile + '} the full name of the input file\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFileFolder + '} the folder of the input file\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFileBaseName + '} the basename of the input file\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFileExtension + '} the extension of the input file\n'
-    epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varOutFile + '} the full name of the output file\n'
+    epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varOutFile + '} the full name of the output file (provided it was created)\n'
+    epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varOutFileFolder + '} the folder for the output\n'
     epilogStr += '\nExample:\n\n'
     epilogStr += 'fileProcessor -i ./myInputFolder -o ./myOutputFolder -f \'(\\.bin)\\b\' -n \'${FP_BASENAME}_processed${FP_EXTENSION}\' -c \'myCommand ${FP_IN} ${FP_OUT}\' -r\n\n'
     epilogStr += 'The command myCommand will be applied to all the .bin files in the folder myInputFolder and its subfolders.\n'
@@ -435,10 +453,17 @@ if __name__ == "__main__":
                          default=DEFAULT_fileFilter,
                          required=False)
 
+    parser.add_argument('-m', '--samplingStep',
+                         type=int,
+                         action='store',
+                         help='samples the input file list and processes one file every samplingStep ones ( default is ' + str(DEFAULT_samplingStep) + ' )',
+                         default=DEFAULT_samplingStep,
+                         required=False)
+
     parser.add_argument('-n', '--nameFormat',
                          type=str,
                          action='store',
-                         help='specifies the output name format using the format convenience variables',
+                         help='specifies the output name format using the format convenience variables. If not specified, no output name will be created.',
                          default=DEFAULT_nameFormat,
                          required=False)
 
@@ -486,9 +511,9 @@ if __name__ == "__main__":
 
     if args.outputPath == None:
         args.outputPath = args.inputPath
-        if args.verbosity & VERBOSE_FILE_PROCESSOR:
-            print Colors.FILE_PROCESSOR + \
-                'Defaulting output path to' + Colors.ENDC, args.outputPath
+        #if args.verbosity & VERBOSE_FILE_PROCESSOR:
+        #    print Colors.FILE_PROCESSOR + \
+        #        'Defaulting output path to' + Colors.ENDC, args.outputPath
 
     # let'd go !
     run(args)
