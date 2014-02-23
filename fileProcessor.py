@@ -410,7 +410,7 @@ if __name__ == "__main__":
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varExtension + '} indicates the extension of the input file (including the separator).\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varCounter + 'N} indicates a counter with N digits ( if N = 0 no leading zeros will be prepended ).\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varOrigCounter + 'N} indicates the first counter recovered from the input file name with N digits ( if N = 0 no leading zeros will be prepended ).\n'
-    epilogStr += '\n- The following values are exported to the enviroment of the command that is launched\n'
+    epilogStr += '\n- The following values are exported to the environment of the command that is launched\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFile + '} the full name of the input file\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFileFolder + '} the folder of the input file\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFileBaseName + '} the basename of the input file\n'
@@ -418,7 +418,7 @@ if __name__ == "__main__":
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varOutFile + '} the full name of the output file (provided it was created)\n'
     epilogStr += '  -' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varOutFileFolder + '} the folder for the output\n'
     epilogStr += '\nExample:\n\n'
-    epilogStr += 'fileProcessor -i ./myInputFolder -o ./myOutputFolder -f \'(\\.bin)\\b\' -n \'${FP_BASENAME}_processed${FP_EXTENSION}\' -c \'myCommand ${FP_IN} ${FP_OUT}\' -r\n\n'
+    epilogStr += 'fileProcessor ./myInputFolder -o ./myOutputFolder -f \'(\\.bin)\\b\' -n \'${FP_BASENAME}_processed${FP_EXTENSION}\' -c \'myCommand ${FP_IN} ${FP_OUT}\' -r\n\n'
     epilogStr += 'The command myCommand will be applied to all the .bin files in the folder myInputFolder and its subfolders.\n'
     epilogStr += 'The output files will have the _processed string appended after the basename and will be written in the\n'
     epilogStr += 'folder myOutputFolder.'
@@ -427,16 +427,15 @@ if __name__ == "__main__":
                                      description=descriptionStr,
                                      epilog=epilogStr)
 
-    parser.add_argument('-i', '--inputPath',
+    parser.add_argument('inputPath',
                         type=str,
                         action='store',
-                         help='the folder containing the files to process',
-                         required=True)
+                         help='the folder containing the files to process')
 
     parser.add_argument('-o', '--outputPath',
                          type=str,
                          action='store',
-                         help='the output folder ( default is the same as the input )',
+                         help='the output folder (if not set, the same as the input will be used). Default: %(default)s',
                          default=None,
                          required=False)
 
@@ -444,40 +443,40 @@ if __name__ == "__main__":
                          type=int,
                          action='store',
                          default=DEFAULT_sortMode,
-                         help='defines the sorting order in which input the files will be processed: ' + str(SORT_NONE) + ' is no sorting, ' + str(SORT_LEXICOGRAPHICAL) + ' is lexicographical sorting, ' + str(SORT_HUMAN) + ' is human friendly sorting. Default is ' + str(DEFAULT_sortMode))
+                         help='defines the sorting order in which input the files will be processed: ' + str(SORT_NONE) + ' is no sorting, ' + str(SORT_LEXICOGRAPHICAL) + ' is lexicographical sorting, ' + str(SORT_HUMAN) + ' is human friendly sorting. Default: %(default)s')
 
     parser.add_argument('-f', '--fileFilter',
                          type=str,
                          action='store',
-                         help='regular expression used to filter the input files. If not specified, all the files will be processed ( default is ' + str(DEFAULT_fileFilter) + ' )',
+                         help='regular expression used to filter the input files. If not specified, all the files will be processed. Default: %(default)s',
                          default=DEFAULT_fileFilter,
                          required=False)
 
     parser.add_argument('-m', '--samplingStep',
                          type=int,
                          action='store',
-                         help='samples the input file list and processes one file every samplingStep ones ( default is ' + str(DEFAULT_samplingStep) + ' )',
+                         help='samples the input file list and processes one file every samplingStep ones. Default: %(default)s',
                          default=DEFAULT_samplingStep,
                          required=False)
 
     parser.add_argument('-n', '--nameFormat',
                          type=str,
                          action='store',
-                         help='specifies the output name format using the format convenience variables. If not specified, no output name will be created.',
+                         help='specifies the output name format using the format convenience variables. If not specified, no output name will be created. Default: %(default)s',
                          default=DEFAULT_nameFormat,
                          required=False)
 
     parser.add_argument('--counterOffset',
                          type=int,
                          action='store',
-                         help='counter offset. This option is used only if you use the ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varCounter + 'N} format variable and defines the initial value for the counter',
+                         help='counter offset. This option is used only if you use the ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varCounter + 'N} format variable and defines the initial value for the counter. Default: %(default)s',
                          default=DEFAULT_counterOffset,
                          required=False)
 
     parser.add_argument('-c', '--command',
                          type=str,
                          action='store',
-                         help='the command to apply to the list of files. Note that ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFile + '} denotes the input file, whereas ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varOutFile + '} denotes the output file (see the notes at the end for more information).',
+                         help='the command to apply to the list of files. Note that ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varInFile + '} denotes the input file, whereas ' + DEFAULT_varMarker + '{' + DEFAULT_varPrefix + DEFAULT_varOutFile + '} denotes the output file (see the notes at the end for more information). Default: %(default)s',
                          default=None,
                          required=True)
 
@@ -492,8 +491,7 @@ if __name__ == "__main__":
     parser.add_argument('-l', '--logFilename',
                          type=str,
                          action='store',
-                         help='creates a log CSV file that records the activity of %(prog)s ( default is ' +
-                             str(DEFAULT_logFilename) + ' )',
+                         help='creates a log CSV file that records the activity of %(prog)s. Default: %(default)s',
                          default=DEFAULT_logFilename,
                          required=False)
 
@@ -501,7 +499,7 @@ if __name__ == "__main__":
                          type=int,
                          action='store',
                          default=DEFAULT_verbose,
-                         help='bit field value to specify the output verbosity: ' + str(VERBOSE_NONE) + ' is no output, ' + str(VERBOSE_EXEC) + ' is output from the command applied to the files, ' + str(VERBOSE_FILE_PROCESSOR) + ' is output from %(prog)s, ' + str(VERBOSE_FILE_PROCESSOR_DEBUG) + ' is further debug info ( default is ' + str(DEFAULT_verbose) + ' )')
+                         help='bit field value to specify the output verbosity: ' + str(VERBOSE_NONE) + ' is no output, ' + str(VERBOSE_EXEC) + ' is output from the command applied to the files, ' + str(VERBOSE_FILE_PROCESSOR) + ' is output from %(prog)s, ' + str(VERBOSE_FILE_PROCESSOR_DEBUG) + ' is further debug info. Default: %(default)s')
 
     parser.add_argument('--version',
                          action='version',
